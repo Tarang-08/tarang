@@ -10,26 +10,31 @@ import RadioGroup from "@mui/material/RadioGroup";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import FormControl from "@mui/material/FormControl";
 
+import Snackbar from "@mui/material/Snackbar"; // 🆕 added
+import MuiAlert from "@mui/material/Alert";     // 🆕 added
+
 import Candidate from "../components/CandidateCard";
 
 export default function Vote({ role, contract, web3, currentAccount }) {
-  // const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [vote, setVote] = useState(null);
   const [electionState, setElectionState] = useState(0);
+  const [remainingTime, setRemainingTime] = useState(0);
 
-  const [open, setOpen] = useState(false);
+  // Snackbar states 🆕
+  const [snackOpen, setSnackOpen] = useState(false);
+  const [snackMessage, setSnackMessage] = useState("");
+  const [snackSeverity, setSnackSeverity] = useState("success");
 
   const getCandidates = async () => {
     if (contract) {
       const count = await contract.methods.candidatesCount().call();
       const temp = [];
-      for (let i = 0; i < count; i++) {
-        const candidate = await contract.methods.getCandidateDetails(i).call();
-        temp.push({ name: candidate[0], votes: candidate[1] });
+      for (let i = 1; i <= count; i++) {
+        const candidate = await contract.methods.candidates(i).call();
+        temp.push({ name: candidate.name, votes: candidate.voteCount });
       }
       setCandidates(temp);
-      // setLoading(false);
     }
   };
 
@@ -38,9 +43,17 @@ export default function Vote({ role, contract, web3, currentAccount }) {
       if (contract) {
         await contract.methods.vote(candidate).send({ from: currentAccount });
         getCandidates();
+        // Success snackbar 🆕
+        setSnackMessage("✅ Vote submitted successfully!");
+        setSnackSeverity("success");
+        setSnackOpen(true);
       }
     } catch (error) {
       console.error("Error:", error);
+      // Error snackbar 🆕
+      setSnackMessage("❌ Vote failed! " + error.message);
+      setSnackSeverity("error");
+      setSnackOpen(true);
     }
   };
 
@@ -51,9 +64,23 @@ export default function Vote({ role, contract, web3, currentAccount }) {
     }
   };
 
+  const getRemainingTime = async () => {
+    if (contract) {
+      const time = await contract.methods.getRemainingTime().call();
+      setRemainingTime(parseInt(time));
+    }
+  };
+
   useEffect(() => {
     getElectionState();
     getCandidates();
+    getRemainingTime();
+
+    const timer = setInterval(() => {
+      getRemainingTime();
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, [contract]);
 
   const handleVoteChange = (event) => {
@@ -63,6 +90,10 @@ export default function Vote({ role, contract, web3, currentAccount }) {
   const handleVote = (event) => {
     event.preventDefault();
     voteCandidate(vote);
+  };
+
+  const handleSnackClose = () => {
+    setSnackOpen(false);
   };
 
   return (
@@ -79,7 +110,25 @@ export default function Vote({ role, contract, web3, currentAccount }) {
             </Typography>
             <Divider />
           </Grid>
-          {electionState === 1 && (
+
+          {electionState === 1 && remainingTime > 0 && (
+            <Grid item xs={12}>
+              <Typography align="center" variant="subtitle1">
+                🕒 Time left to vote: {Math.floor(remainingTime / 60)}m{" "}
+                {remainingTime % 60}s
+              </Typography>
+            </Grid>
+          )}
+
+          {electionState === 1 && remainingTime === 0 && (
+            <Grid item xs={12}>
+              <Typography align="center" variant="subtitle1" color="red">
+                ❌ Voting period has ended!
+              </Typography>
+            </Grid>
+          )}
+
+          {electionState === 1 && remainingTime > 0 && (
             <>
               <Grid item xs={12}>
                 <FormControl>
@@ -100,7 +149,7 @@ export default function Vote({ role, contract, web3, currentAccount }) {
                         key={index}
                         labelPlacement="top"
                         control={<Radio />}
-                        value={index}
+                        value={index + 1}
                         label={<Candidate id={index} name={candidate.name} />}
                       />
                     ))}
@@ -113,6 +162,7 @@ export default function Vote({ role, contract, web3, currentAccount }) {
                     type="submit"
                     variant="contained"
                     sx={{ width: "100%" }}
+                    disabled={remainingTime === 0}
                   >
                     Vote
                   </Button>
@@ -147,6 +197,24 @@ export default function Vote({ role, contract, web3, currentAccount }) {
           )}
         </Grid>
       </form>
+
+      {/* Snackbar Popup */}
+      <Snackbar
+        open={snackOpen}
+        autoHideDuration={4000}
+        onClose={handleSnackClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <MuiAlert
+          elevation={6}
+          variant="filled"
+          onClose={handleSnackClose}
+          severity={snackSeverity}
+          sx={{ width: "100%" }}
+        >
+          {snackMessage}
+        </MuiAlert>
+      </Snackbar>
     </Box>
   );
 }

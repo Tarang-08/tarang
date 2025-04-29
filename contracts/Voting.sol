@@ -1,119 +1,60 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.4.0 <0.9.0;
+pragma solidity ^0.8.14;
 
-contract Election {
-    enum State {
-        NotStarted,
-        InProgress,
-        Ended
-    }
+contract Voting {
+    address public admin;
+    uint public votingDeadline;
 
     struct Candidate {
-        uint256 id;
+        uint id;
         string name;
-        uint256 voteCount;
+        uint voteCount;
     }
 
-    address public owner;
-    State public electionState;
+    mapping(address => bool) public registeredVoters;
+    mapping(address => bool) public hasVoted;
+    mapping(uint => Candidate) public candidates;
+    uint public candidatesCount;
 
-    struct Voter {
-        uint256 id;
-        string name;
+    event Voted(address indexed voter, uint candidateId);
+
+    constructor(uint _durationInMinutes) {
+        admin = msg.sender;
+        votingDeadline = block.timestamp + (_durationInMinutes * 1 minutes);
     }
 
-    mapping(uint256 => Candidate) candidates;
-    mapping(address => bool) voted;
-
-    mapping(address => bool) isVoter;
-
-    uint256 public candidatesCount = 0;
-
-    uint256 public votersCount = 0;
-
-    constructor() {
-        owner = msg.sender;
-        electionState = State.NotStarted;
-        addCandidate("Candidate 1");
-        addCandidate("Candidate 2");
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin can perform this action");
+        _;
     }
 
-    event Voted(uint256 indexed _candidateId);
-
-    function startElection() public {
-        require(msg.sender == owner);
-        require(electionState == State.NotStarted);
-        electionState = State.InProgress;
+    modifier onlyBeforeDeadline() {
+        require(block.timestamp <= votingDeadline, "Voting period has ended");
+        _;
     }
 
-    function endElection() public {
-        require(msg.sender == owner);
-        require(electionState == State.InProgress);
-        electionState = State.Ended;
-    }
-
-    function addCandidate(string memory _name) public {
-        require(owner == msg.sender, "Only owner can add candidates");
-        require(
-            electionState == State.NotStarted,
-            "Election has already started"
-        );
-
-        candidates[candidatesCount] = Candidate(candidatesCount, _name, 0);
+    function addCandidate(string memory _name) public onlyAdmin {
         candidatesCount++;
+        candidates[candidatesCount] = Candidate(candidatesCount, _name, 0);
     }
 
-    function addVoter(address _voter) public {
-        require(owner == msg.sender, "Only owner can add voter");
-        require(!isVoter[_voter], "Voter already added");
-        require(
-            electionState == State.NotStarted,
-            "Voter can't be added after election started"
-        );
-
-        isVoter[_voter] = true;
+    function registerVoter(address _voter) public onlyAdmin {
+        registeredVoters[_voter] = true;
     }
 
-    function getRole(address _current) public view returns (uint256) {
-        if (owner == _current) {
-            return 1;
-        } else if (isVoter[_current]) {
-            return 2;
-        } else {
-            return 3;
-        }
-    }
+    function vote(uint _candidateId) public onlyBeforeDeadline {
+        require(registeredVoters[msg.sender], "You are not registered to vote");
+        require(!hasVoted[msg.sender], "You have already voted");
+        require(_candidateId > 0 && _candidateId <= candidatesCount, "Invalid candidate");
 
-    function vote(uint256 _candidateId) public {
-        require(
-            electionState == State.InProgress,
-            "Election is not in progress"
-        );
-        require(isVoter[msg.sender], "Non authorised user cannot vote");
-        require(!voted[msg.sender], "You have already voted");
-        require(
-            _candidateId >= 0 && _candidateId < candidatesCount,
-            "Invalid candidate ID"
-        );
-
+        hasVoted[msg.sender] = true;
         candidates[_candidateId].voteCount++;
-        voted[msg.sender] = true;
 
-        emit Voted(_candidateId);
+        emit Voted(msg.sender, _candidateId);
     }
 
-    function getCandidateDetails(uint256 _candidateId)
-        public
-        view
-        returns (string memory, uint256)
-    {
-        require(
-            _candidateId >= 0 && _candidateId < candidatesCount,
-            "Invalid candidate ID"
-        );
-        return (
-            candidates[_candidateId].name,
-            candidates[_candidateId].voteCount
-        );
+    function getRemainingTime() public view returns (uint) {
+        if (block.timestamp >= votingDeadline) return 0;
+        return votingDeadline - block.timestamp;
     }
 }
